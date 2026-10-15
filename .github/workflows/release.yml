@@ -1,0 +1,91 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image name (lowercase)
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
+      - name: Build image
+        run: docker build --build-arg MODEL_VERSION="$GITHUB_REF_NAME" -t "$IMAGE:$GITHUB_REF_NAME" .
+
+      - name: Start container
+        run: docker run -d --name app -p 80:80 "$IMAGE:$GITHUB_REF_NAME"
+
+      - name: Wait until service is up
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost/health; then exit 0; fi
+            sleep 1
+          done
+          echo "Service did not start within 30 s"
+          exit 1
+
+      - name: Test /health
+        run: |
+          RESPONSE=$(curl -sf http://localhost/health)
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e --arg v "$GITHUB_REF_NAME" '.status == "ok" and .model_version == $v'
+
+      - name: Test /predict
+        run: |
+          RESPONSE=$(curl -sf -X POST http://localhost/predict \
+            -H "Content-Type: application/json" \
+            -d '{"age": 0.02, "sex": -0.044, "bmi": 0.06, "bp": -0.03, "s1": -0.02, "s2": 0.03, "s3": -0.02, "s4": 0.02, "s5": 0.02, "s6": -0.001}')
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.prediction | type == "number"'
+
+      - name: Test 422 on missing feature
+        run: |
+          STATUS=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost/predict \
+            -H "Content-Type: application/json" \
+            -d '{"age": 0.02, "sex": -0.044, "bmi": 0.06, "bp": -0.03, "s1": -0.02, "s2": 0.03, "s3": -0.02, "s4": 0.02, "s5": 0.02}')
+          echo "Status: $STATUS"
+          test "$STATUS" = "422"
+
+      - name: Copy metrics out of the container
+        run: docker cp app:TODO/models/metrics.json ./metrics.json
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push image
+        run: docker push "$IMAGE:$GITHUB_REF_NAME"
+
+      - name: Build release notes
+        run: |
+          {
+            cat CHANGELOG.md
+            echo
+            echo "## Metrics ($GITHUB_REF_NAME)"
+            echo '```json'
+            cat metrics.json
+            echo '```'
+          } > release-notes.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" metrics.json CHANGELOG.md \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file release-notes.md
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs app
