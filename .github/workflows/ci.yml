@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4          # gets the repo code onto the runner
+      - uses: actions/setup-python@v5      # installs Python
+        with:
+          python-version: "3.11"
+          cache: pip                       # reuses downloads between runs, so they're faster
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Training smoke run
+        run: python src/train.py
+
+      - name: Unit tests
+        run: pytest
+
+      - name: Upload model + metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-artifacts
+          path: |
+            models/model.joblib
+            models/metrics.json
+          if-no-files-found: error
