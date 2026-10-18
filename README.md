@@ -121,7 +121,6 @@ Training is deterministic: the seed is fixed to 42 and all package versions are 
 
 
 ## CI/CD
-_Tom_
 ### Continuous Integration (`.github/workflows/ci.yml`)
 
 Runs on every pull request and on every push to `main`.
