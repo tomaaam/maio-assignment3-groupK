@@ -77,7 +77,20 @@ Example response:
 ```
 
 Missing required fields return HTTP `422` with a JSON validation error.
-=======
+
+Example: missing `s6` field
+
+```json
+{
+  "detail": [
+    {
+      "type": "missing",
+      "loc": ["body", "s6"],
+      "msg": "Field required"
+    }
+  ]
+}
+
 
 ## Reproduce training locally
 Requirements: Python 3.11+.
