@@ -40,3 +40,10 @@ def test_model_predicts_from_feature_dataframe(tmp_path):
     pred = model.predict(row)
     assert pred.shape == (1,)
     assert float(pred[0]) == float(pred[0])  # not NaN
+
+
+def test_flag_threshold_is_calibrated(tmp_path):
+    # v0.2: the calibrated flag must catch at least half of the high-risk patients.
+    metrics = train(tmp_path, "test")
+    assert metrics["high_risk_flag_threshold"] < metrics["high_risk_label_threshold"]
+    assert metrics["recall_at_threshold"] >= 0.5

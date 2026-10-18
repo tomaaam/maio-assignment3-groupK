@@ -19,9 +19,14 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.datasets import load_diabetes
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error, precision_score, recall_score
-from sklearn.model_selection import KFold, cross_val_score, train_test_split
+from sklearn.linear_model import RidgeCV
+from sklearn.metrics import f1_score, mean_squared_error, precision_score, recall_score
+from sklearn.model_selection import (
+    KFold,
+    cross_val_predict,
+    cross_val_score,
+    train_test_split,
+)
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -31,10 +36,12 @@ FEATURES = ["age", "sex", "bmi", "bp", "s1", "s2", "s3", "s4", "s5", "s6"]
 # A patient counts as "high risk" if the progression index is in the top 25%
 # of the training data. Used only for the extra precision/recall metrics.
 HIGH_RISK_QUANTILE = 0.75
+# Candidate regularisation strengths for RidgeCV (searched with internal CV).
+RIDGE_ALPHAS = np.logspace(-3, 3, 50)
 
 
 def set_seeds(seed: int = SEED) -> None:
-    """Fix all random number generators so every run gives the same result."""
+    """Fix all random number generators => every run the same result."""
     random.seed(seed)
     np.random.seed(seed)
 
@@ -48,15 +55,12 @@ def load_data() -> tuple[pd.DataFrame, pd.Series]:
 
 
 def build_model() -> Pipeline:
-    """v0.1 baseline: StandardScaler + LinearRegression in one pipeline.
-
-    Keeping scaling inside the pipeline means the API applies exactly the
-    same preprocessing as training (no training-serving skew).
+    """v0.2: StandardScaler + RidgeCV in one pipeline
     """
     return Pipeline(
         [
             ("scaler", StandardScaler()),
-            ("model", LinearRegression()),
+            ("model", RidgeCV(alphas=RIDGE_ALPHAS)),
         ]
     )
 
@@ -64,8 +68,14 @@ def build_model() -> Pipeline:
 def choose_flag_threshold(
     model: Pipeline, X_train, y_train, label_threshold: float
 ) -> float:
-    """v0.1: flag a patient when the predicted score is above the label threshold."""
-    return label_threshold
+    """v0.2: calibrate the flag threshold on the training data
+    """
+    cv = KFold(n_splits=5, shuffle=True, random_state=SEED)
+    oof_pred = cross_val_predict(model, X_train, y_train, cv=cv)
+    true_flag = y_train >= label_threshold
+    candidates = np.quantile(oof_pred, np.linspace(0.30, 0.95, 131))
+    scores = [f1_score(true_flag, oof_pred >= c) for c in candidates]
+    return float(candidates[int(np.argmax(scores))])
 
 
 def evaluate(
@@ -123,6 +133,7 @@ def train(out_dir: Path, version: str) -> dict:
         "n_test": len(X_test),
         "seed": SEED,
         "cv_rmse": round(float(cv_rmse), 4),
+        "ridge_alpha": round(float(model.named_steps["model"].alpha_), 4),
         **evaluate(model, X_test, y_test, label_threshold, flag_threshold),
     }
 
@@ -135,7 +146,7 @@ def train(out_dir: Path, version: str) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out-dir", type=Path, default=Path("models"))
-    parser.add_argument("--version", default=os.getenv("MODEL_VERSION", "v0.1"))
+    parser.add_argument("--version", default=os.getenv("MODEL_VERSION", "v0.2"))
     args = parser.parse_args()
 
     metrics = train(args.out_dir, args.version)
