@@ -1,6 +1,83 @@
 # maio-assignment3-groupK
 ## Run & API
-_Mattias_
+
+
+### Run with Docker
+```bash
+
+docker build -t diabetes-api .
+
+docker run -d --name diabetes-api-container -p 8000:80 diabetes-api
+
+```
+API: `http://localhost:8000`  
+
+Docs: `http://localhost:8000/docs`
+
+### Health Check
+
+`GET /health`
+
+```json
+
+{
+
+  "status": "ok",
+
+  "model_version": "v0.1"
+
+}
+
+```
+
+### Predict
+
+`POST /predict`
+
+Example request:
+
+```json
+
+{
+
+  "age": 0.02,
+
+  "sex": -0.044,
+
+  "bmi": 0.06,
+
+  "bp": -0.03,
+
+  "s1": -0.02,
+
+  "s2": 0.03,
+
+  "s3": -0.02,
+
+  "s4": 0.02,
+
+  "s5": 0.02,
+
+  "s6": -0.001
+
+}
+
+```
+
+Example response:
+
+```json
+
+{
+
+  "prediction": 235.95
+
+}
+
+```
+
+Missing required fields return HTTP `422` with a JSON validation error.
+=======
 
 ## Reproduce training locally
 Requirements: Python 3.11+.
