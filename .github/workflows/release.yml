@@ -55,7 +55,7 @@ jobs:
           test "$STATUS" = "422"
 
       - name: Copy metrics out of the container
-        run: docker cp app:TODO/models/metrics.json ./metrics.json
+        run: docker cp app:/app/models/metrics.json ./metrics.json
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
